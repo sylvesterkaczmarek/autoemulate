@@ -465,10 +465,38 @@ class AutoEmulate(ConversionMixin, TorchDeviceMixin, Results):
                                     for param_name, param in init_sig.parameters.items()
                                     if param_name in model_cls.get_tune_params()
                                 }
-                                # Overwrite defaults with user-supplied values
+                                # Apply only user parameters accepted by this model.
+                                # This lets one shared model_params mapping configure
+                                # heterogeneous emulator classes without passing
+                                # model-specific arguments to incompatible models.
+                                accepts_kwargs = any(
+                                    param.kind is inspect.Parameter.VAR_KEYWORD
+                                    for param in init_sig.parameters.values()
+                                )
+                                if accepts_kwargs:
+                                    compatible_model_params = self.model_params
+                                else:
+                                    compatible_model_params = {
+                                        name: value
+                                        for name, value in self.model_params.items()
+                                        if name in init_sig.parameters
+                                    }
+
+                                ignored_model_params = (
+                                    self.model_params.keys()
+                                    - compatible_model_params.keys()
+                                )
+                                if ignored_model_params:
+                                    logger.debug(
+                                        'Ignoring unsupported model_params for model "%s": %s',
+                                        model_cls.__name__,
+                                        sorted(ignored_model_params),
+                                    )
+
+                                # Overwrite defaults with compatible user-supplied values.
                                 best_params_for_this_model = {
                                     **default_params,
-                                    **self.model_params,
+                                    **compatible_model_params,
                                 }
 
                             logger.debug(
